@@ -57,7 +57,9 @@ class MultiAgentQLearner:
 
     def init_hidden(self, batch_size=1):
         """Initializes RNN hidden states for all agents."""
-        return self.policy_net.init_hidden().expand(self.n_agents * batch_size, -1)
+        return self.policy_net.init_hidden().expand(
+            self.n_agents * batch_size, -1
+        ).to(self.device)
 
     def _build_agent(self):
         """Builds agents."""
