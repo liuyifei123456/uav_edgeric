@@ -6,6 +6,7 @@ from envs.multi_agent_env import MultiAgentEnv
 from envs.common import *
 from envs.mubs_cov.maps import MAPS
 from envs.mubs_cov.recorder import Recorder
+from edgeric import EdgeRICScheduler
 
 
 class MultiUbsCoverageEnv(MultiAgentEnv):
@@ -20,8 +21,13 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
     safe_dist = 10.  # Minimum distance between UBSs for collision avoidance (m)
     penalty = 5  # Amount of penalty on collision
 
-    def __init__(self, map_id, fair_service=True, avoid_collision=True, record=True):
+    def __init__(self, map_id, fair_service=True, avoid_collision=True, record=True,
+                 scheduler_mode="original"):
         super(MultiUbsCoverageEnv, self).__init__()
+
+        if scheduler_mode not in ("original", "edgeric_pf"):
+            raise ValueError("scheduler_mode must be 'original' or 'edgeric_pf'")
+        self.scheduler_mode = scheduler_mode
 
         # Extract parameters specified by map.
         self.map = MAPS[map_id]
@@ -37,6 +43,13 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         g_max = self.chan.estimate_chan_gain(0, self.h_ubs)  # Maximum channel gain
         snr_max = self.p_tx * g_max / (self.n0 * self.bw)  # SNR of optimal link
         self.max_rate = self.bw * np.log2(1 + snr_max) * 1e-6  # Maximum link rate (Mbps)
+
+        # Mbps regularizer: cold-start weights are bounded by 20 with this
+        # channel model; do not use a near-zero machine epsilon for PF.
+        self.edgeric_scheduler = (
+            EdgeRICScheduler(self.bw, self.p_tx, self.n0, 0.05 * self.max_rate)
+            if scheduler_mode == "edgeric_pf" else None
+        )
 
         self.t = None  # Timer
         self.pos_ubs = np.empty((self.n_ubs, 2), dtype=np.float32)  # Positions of UBSs (m)
@@ -89,6 +102,9 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         self.avg_rate_per_gt = np.zeros(self.n_gts, dtype=np.float32)  # Average data rate of each GT (Mbps)
         self.total_throughput = 0  # Total throughput of episode (Mb)
         self.n_colls = 0  # Number of collisions
+
+        if self.edgeric_scheduler is not None:
+            self.edgeric_scheduler.reset()
 
         # Setup initial positions of UBSs and GTs.
         positions = self.map.set_positions()
@@ -173,6 +189,13 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         p_itf = np.zeros((self.n_ubs, self.n_gts, self.n_rbs), dtype=np.float32)
         g = self.chan.estimate_chan_gain(self.d_u2g, self.h_ubs)  # Channel gain
         mask_itf = (self.d_u2g <= self.r_cov)  # Mask of interference range
+        if self.edgeric_scheduler is not None:
+            # Current positions/gains, previous completed transmission history.
+            # On reset history is zero; the regularizer handles cold start.
+            self.edgeric_scheduler.compute_weights(
+                g, self.d_u2g, mask_itf, self.avg_rate_per_gt
+            )
+            self.prior_gts = self.edgeric_scheduler.get_priority()
         for m in self.prior_gts:
             nearest_ubs = np.argsort(self.d_u2g[:, m])  # All UBSs from the nearest to the furthest
             for i in nearest_ubs:
@@ -207,7 +230,10 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         self.fair_idx = compute_jain_fairness_index(self.avg_rate_per_gt)  # Long-term fairness index among GTs
         self.global_util = self.fair_idx * self.rate_per_gt.mean()  # Trade-off between fairness and throughout
         self.avg_global_util = (self.avg_global_util * self.t + self.global_util) / (self.t + 1)
-        self.prior_gts = np.argsort(self.avg_rate_per_gt)  # Priorities of GTs for next timestep
+        if self.scheduler_mode == "original":
+            self.prior_gts = np.argsort(self.avg_rate_per_gt)  # Priorities of GTs for next timestep
+        # PF priorities remain as the just-used order for diagnostics and are
+        # recomputed from the next positions before the next RB allocation.
 
     def get_obs(self) -> list:
         return [self.get_obs_agent(agent_id) for agent_id in range(self.n_agents)]
