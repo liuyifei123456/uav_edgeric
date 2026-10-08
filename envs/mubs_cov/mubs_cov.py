@@ -25,12 +25,17 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
 
     def __init__(self, map_id, fair_service=True, avoid_collision=True, record=True,
                  scheduler_mode="original", fast_scheduling=False, dt_sched=1.0,
-                 record_substeps=False):
+                 record_substeps=False, trajectory_mode="endpoint_hold"):
         super(MultiUbsCoverageEnv, self).__init__()
 
         if scheduler_mode not in ("original", "edgeric_pf"):
             raise ValueError("scheduler_mode must be 'original' or 'edgeric_pf'")
         self.scheduler_mode = scheduler_mode
+        if trajectory_mode not in ("endpoint_hold", "linear_interpolation"):
+            raise ValueError("trajectory_mode must be 'endpoint_hold' or 'linear_interpolation'")
+        if trajectory_mode == "linear_interpolation" and not fast_scheduling:
+            raise ValueError("linear_interpolation requires fast_scheduling=True")
+        self.trajectory_mode = trajectory_mode
 
         # Extract parameters specified by map.
         self.map = MAPS[map_id]
@@ -130,6 +135,10 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         self.service_time_s = 0.0
         self.scheduling_durations_s = []
         self.last_radio_trace = []
+        self.trajectory_positions = []
+        self.trajectory_collision_mask = np.zeros(self.n_ubs, dtype=bool)
+        self._trajectory_start_pos = self.pos_ubs.copy()
+        self._trajectory_target_pos = self.pos_ubs.copy()
         self.delivered_mbit_per_gt = np.zeros(self.n_gts, dtype=np.float64)
         self.instant_rate_per_gt = np.zeros(self.n_gts, dtype=np.float32)
         self.instant_rate_per_ubs = np.zeros(self.n_ubs, dtype=np.float32)
@@ -153,7 +162,11 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
 
         # Update UBS positions from actions.
         moves = self.avail_moves[np.array(actions, dtype=int)]  # Moves of all UBSs
-        self.pos_ubs = np.clip(self.pos_ubs + moves, 0, self.range_pos)  # Latest positions of UBSs
+        self._trajectory_start_pos = self.pos_ubs.copy()
+        self._trajectory_target_pos = np.clip(
+            self._trajectory_start_pos + moves, 0, self.range_pos
+        )
+        self.pos_ubs = self._trajectory_target_pos.copy()
 
         self._transmit_data()  # UBSs provide wireless service for GTs at new positions.
 
@@ -276,24 +289,31 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         self.scheduling_count += 1
 
     def _prepare_radio_substep(self, substep_index):
-        """Version A holds the post-action UAV position for the entire period.
+        """Set the UAV position used by one radio substep.
 
-        Extension point for a future trajectory interpolation strategy.
-        Such a strategy must also define collision aggregation; not enabled here.
+        Positions are sampled at the end of each scheduling interval. The
+        endpoint-hold path intentionally retains the stage-2 position.
         """
-        pass
+        if self.trajectory_mode == "linear_interpolation":
+            fraction = float(substep_index + 1) / float(self.n_substeps)
+            self.pos_ubs = self._trajectory_start_pos + fraction * (
+                self._trajectory_target_pos - self._trajectory_start_pos
+            )
+            self.pos_ubs = np.clip(self.pos_ubs, 0, self.range_pos).astype(np.float32)
+        self.trajectory_positions.append(self.pos_ubs.copy())
 
     def _transmit_fast(self):
         period_mbit_gt = np.zeros(self.n_gts, dtype=np.float64)
         period_mbit_ubs = np.zeros(self.n_ubs, dtype=np.float64)
+        period_collision_mask = np.zeros(self.n_ubs, dtype=bool)
+        self.trajectory_positions = []
         for substep in range(self.n_substeps):
             self._prepare_radio_substep(substep)
             history = self.avg_rate_per_gt.copy() if self.record_substeps else None
             self._schedule_once()
-            # Collision convention remains collided-UAV count / 2, but only
-            # once per UAV action (and never during fast reset).
-            if substep == 0:
-                self.n_colls += self.mask_collision.sum() / 2
+            # A collision is aggregated once per UAV action, even when it
+            # persists across several radio substeps.
+            period_collision_mask |= self.mask_collision
             data_gt = self.rate_per_gt.astype(np.float64) * self.dt_sched
             data_ubs = self.rate_per_ubs.astype(np.float64) * self.dt_sched
             period_mbit_gt += data_gt
@@ -305,6 +325,13 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
             if self.scheduler_mode == "original":
                 self.prior_gts = np.argsort(self.avg_rate_per_gt)
             self._capture_radio_sample(self.dt_sched, history)
+
+        # A collision is a cycle event: a pair is counted once even if it
+        # remains within safe_dist for several radio substeps. The mask is
+        # retained for the one reward returned at the UAV decision rate.
+        self.trajectory_collision_mask = period_collision_mask.copy()
+        self.mask_collision = period_collision_mask
+        self.n_colls += period_collision_mask.sum() / 2
 
         # sched and PF diagnostics describe the last actual RB decision.
         # Observations and reward instead use time-average service of this
@@ -330,6 +357,7 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
                       history_after=self.avg_rate_per_gt.copy(),
                       priority=self.last_prior_gts.copy(),
                       coverage=(self.d_u2g <= self.r_cov),
+                      channel_gain=self.chan.estimate_chan_gain(self.d_u2g, self.h_ubs).copy(),
                       pos_ubs=self.pos_ubs.copy(),
                       compute_s=self.scheduling_durations_s[-1])
         if self.edgeric_scheduler is not None:
