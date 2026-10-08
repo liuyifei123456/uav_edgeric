@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from gym.spaces.discrete import Discrete
 from gym.spaces.box import Box
 from gym.spaces.dict import Dict
@@ -22,7 +24,8 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
     penalty = 5  # Amount of penalty on collision
 
     def __init__(self, map_id, fair_service=True, avoid_collision=True, record=True,
-                 scheduler_mode="original"):
+                 scheduler_mode="original", fast_scheduling=False, dt_sched=1.0,
+                 record_substeps=False):
         super(MultiUbsCoverageEnv, self).__init__()
 
         if scheduler_mode not in ("original", "edgeric_pf"):
@@ -34,6 +37,25 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         map_params = self.map.get_params()
         for k, v in map_params.items():
             setattr(self, k, v)
+
+        self.fast_scheduling = bool(fast_scheduling)
+        self.dt_uav = self.dt  # Alias only: action amounts still use original dt.
+        if isinstance(dt_sched, (bool, np.bool_)):
+            raise ValueError("dt_sched must be a finite positive number of seconds")
+        try:
+            self.dt_sched = float(dt_sched)
+        except (ValueError, TypeError):
+            raise ValueError("dt_sched must be a finite positive number of seconds")
+        if not np.isfinite(self.dt_sched) or self.dt_sched <= 0:
+            raise ValueError("dt_sched must be a finite positive number of seconds")
+        self.n_substeps = 1
+        if self.fast_scheduling:
+            ratio = self.dt_uav / self.dt_sched
+            if (not np.isfinite(ratio) or ratio < 1 or
+                    not np.isclose(ratio, round(ratio), rtol=0, atol=1e-9)):
+                raise ValueError("dt_uav must be an integer multiple of dt_sched")
+            self.n_substeps = int(round(ratio))
+        self.record_substeps = bool(record_substeps)
 
         self._fair_service = fair_service  # Whether fairness among GTs is considered
         self._avoid_collision = avoid_collision  # Whether penalties are imposed on collisions between UBSs
@@ -103,6 +125,15 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         self.total_throughput = 0  # Total throughput of episode (Mb)
         self.n_colls = 0  # Number of collisions
 
+        self.scheduling_count = 0  # Actual radio decisions, independent of t.
+        self.initialization_scheduling_count = 0
+        self.service_time_s = 0.0
+        self.scheduling_durations_s = []
+        self.last_radio_trace = []
+        self.delivered_mbit_per_gt = np.zeros(self.n_gts, dtype=np.float64)
+        self.instant_rate_per_gt = np.zeros(self.n_gts, dtype=np.float32)
+        self.instant_rate_per_ubs = np.zeros(self.n_ubs, dtype=np.float32)
+
         if self.edgeric_scheduler is not None:
             self.edgeric_scheduler.reset()
 
@@ -145,9 +176,41 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
         return self.get_obs(), self.get_state(), reward, done, info
 
     def _transmit_data(self):
-        """UBSs provide downlink service at latest positions for GTs within their coverage."""
+        """Dispatch legacy transmission or one independent radio service period."""
+        self.last_radio_trace = []
+        if self.fast_scheduling:
+            if self.t == 0:
+                # Initialization has no duration and makes no RB decision.
+                self._update_geometry()
+                self.sched = np.zeros((self.n_ubs, self.n_gts, self.n_rbs), dtype=bool)
+                self.rate_per_gt = np.zeros(self.n_gts, dtype=np.float32)
+                self.rate_per_ubs = np.zeros(self.n_ubs, dtype=np.float32)
+                self.last_prior_gts = self.prior_gts.copy()
+                self.fair_idx = compute_jain_fairness_index(self.avg_rate_per_gt)
+                self.global_util = 0.0
+                return
+            self._transmit_fast()
+            return
 
-        # Step 1: Update spatial relations between entities.
+        history = self.avg_rate_per_gt.copy() if self.record_substeps else None
+        self._schedule_once()
+        self.n_colls += self.mask_collision.sum() / 2
+        # The following legacy expressions and reset service remain unchanged.
+        self.avg_rate_per_gt = (self.avg_rate_per_gt * self.t + self.rate_per_gt) / (self.t + 1)  # Average data rate
+        self.total_throughput += (self.rate_per_gt.sum() * self.dt / 1e3)  # Total throughput of network (Gb)
+        self.fair_idx = compute_jain_fairness_index(self.avg_rate_per_gt)  # Long-term fairness index among GTs
+        self.global_util = self.fair_idx * self.rate_per_gt.mean()  # Trade-off between fairness and throughout
+        self.avg_global_util = (self.avg_global_util * self.t + self.global_util) / (self.t + 1)
+        if self.scheduler_mode == "original":
+            self.prior_gts = np.argsort(self.avg_rate_per_gt)  # Priorities of GTs for next timestep
+        self.service_time_s += self.dt
+        self.initialization_scheduling_count += int(self.t == 0)
+        self.instant_rate_per_gt = self.rate_per_gt.copy()
+        self.instant_rate_per_ubs = self.rate_per_ubs.copy()
+        self._capture_radio_sample(self.dt, history)
+
+    def _update_geometry(self):
+        """Refresh distances, visibility and collision mask without counting time."""
         self.d_u2g = np.zeros((self.n_ubs, self.n_gts), dtype=np.float32)
         self.d_u2u = np.zeros((self.n_ubs, self.n_ubs), dtype=np.float32)
         for i in range(self.n_ubs):
@@ -158,33 +221,9 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
 
         self.adj = (self.d_u2u <= self.r_comm)  # Get adjacency between agents.
         self.mask_collision = ((self.d_u2u + 99999 * np.eye(self.n_ubs)) < self.safe_dist).any(1)
-        self.n_colls += self.mask_collision.sum() / 2  # Count the number of collisions.
 
-        # Step 2: UBSs provide downlink service for GTs within their coverage.
-
-        # ============================================================================================================ #
-        # # V1: Simplified interference calculation ignoring specific RB assignment
-        # # Get interference relations and associate GTs to UBSs.
-        # g = self.chan.estimate_chan_gain(self.d_u2g, self.h_ubs)  # Channel gain
-        # mask_itf = (self.d_u2g <= self.r_cov)
-        # self.sched = np.zeros((self.n_ubs, self.n_gts), dtype=bool)
-        # for m in self.prior_gts:
-        #     choices = np.argsort(self.d_u2g[:, m])  # All UBSs from the nearest to the furthest
-        #     for i in choices:
-        #         if (self.sched[i].sum() < self.n_rbs) and (self.d_u2g[i, m] <= self.r_cov):
-        #             self.sched[i, m] = True
-        #             break
-        #
-        # # Compute data rates from channel gain and scheduling decisions.
-        # p_rx = self.p_tx * g * self.sched  # Rx power of intended signal
-        # p_itf = self.p_tx * g * mask_itf - p_rx  # Interference level
-        # sinr = p_rx.sum(0) / (p_itf.sum(0) + self.bw * self.n0)  # Signal-to-interference-plus-noise ratio (SINR)
-        # self.rate_per_gt = self.bw * np.log2(1 + sinr) * 1e-6  # Rate of each GT (Mbps)
-        # self.rate_per_ubs = (self.sched * self.rate_per_gt).sum(1)  # Rate offered by each UBS (Mbps)
-
-        # ============================================================================================================ #
-        # V2
-        # Get interference relations and associate GTs to UBSs on RBs.
+    def _allocate_resources(self):
+        """Stage-1 PF weights, RB allocation, interference and SINR, unchanged."""
         self.sched = np.zeros((self.n_ubs, self.n_gts, self.n_rbs), dtype=bool)
         p_itf = np.zeros((self.n_ubs, self.n_gts, self.n_rbs), dtype=np.float32)
         g = self.chan.estimate_chan_gain(self.d_u2g, self.h_ubs)  # Channel gain
@@ -196,6 +235,7 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
                 g, self.d_u2g, mask_itf, self.avg_rate_per_gt
             )
             self.prior_gts = self.edgeric_scheduler.get_priority()
+        self.last_prior_gts = self.prior_gts.copy()
         for m in self.prior_gts:
             nearest_ubs = np.argsort(self.d_u2g[:, m])  # All UBSs from the nearest to the furthest
             for i in nearest_ubs:
@@ -222,18 +262,93 @@ class MultiUbsCoverageEnv(MultiAgentEnv):
                 self.rate_per_gt[m] = self.bw * np.log2(1 + sinr) * 1e-6  # Achievable rate of each GT (Mbps)
         self.rate_per_ubs = (self.sched.sum(-1) * self.rate_per_gt).sum(1)
 
-        # ============================================================================================================ #
 
-        # Step 3: Update variables related to the service condition at current timestep.
-        self.avg_rate_per_gt = (self.avg_rate_per_gt * self.t + self.rate_per_gt) / (self.t + 1)  # Average data rate
-        self.total_throughput += (self.rate_per_gt.sum() * self.dt / 1e3)  # Total throughput of network (Gb)
-        self.fair_idx = compute_jain_fairness_index(self.avg_rate_per_gt)  # Long-term fairness index among GTs
-        self.global_util = self.fair_idx * self.rate_per_gt.mean()  # Trade-off between fairness and throughout
-        self.avg_global_util = (self.avg_global_util * self.t + self.global_util) / (self.t + 1)
-        if self.scheduler_mode == "original":
-            self.prior_gts = np.argsort(self.avg_rate_per_gt)  # Priorities of GTs for next timestep
-        # PF priorities remain as the just-used order for diagnostics and are
-        # recomputed from the next positions before the next RB allocation.
+    def _schedule_once(self):
+        """Time CPU geometry + channel + priority + RB allocation + rate calculation.
+
+        Excludes history/period aggregation and optional trace copies. There
+        are no asynchronous GPU operations or wall-clock sleeps in this path.
+        """
+        started = perf_counter()
+        self._update_geometry()
+        self._allocate_resources()
+        self.scheduling_durations_s.append(perf_counter() - started)
+        self.scheduling_count += 1
+
+    def _prepare_radio_substep(self, substep_index):
+        """Version A holds the post-action UAV position for the entire period.
+
+        Extension point for a future trajectory interpolation strategy.
+        Such a strategy must also define collision aggregation; not enabled here.
+        """
+        pass
+
+    def _transmit_fast(self):
+        period_mbit_gt = np.zeros(self.n_gts, dtype=np.float64)
+        period_mbit_ubs = np.zeros(self.n_ubs, dtype=np.float64)
+        for substep in range(self.n_substeps):
+            self._prepare_radio_substep(substep)
+            history = self.avg_rate_per_gt.copy() if self.record_substeps else None
+            self._schedule_once()
+            # Collision convention remains collided-UAV count / 2, but only
+            # once per UAV action (and never during fast reset).
+            if substep == 0:
+                self.n_colls += self.mask_collision.sum() / 2
+            data_gt = self.rate_per_gt.astype(np.float64) * self.dt_sched
+            data_ubs = self.rate_per_ubs.astype(np.float64) * self.dt_sched
+            period_mbit_gt += data_gt
+            period_mbit_ubs += data_ubs
+            self.delivered_mbit_per_gt += data_gt
+            self.service_time_s = self.scheduling_count * self.dt_sched
+            self.avg_rate_per_gt = self.delivered_mbit_per_gt / self.service_time_s
+            self.total_throughput = self.delivered_mbit_per_gt.sum() / 1e3
+            if self.scheduler_mode == "original":
+                self.prior_gts = np.argsort(self.avg_rate_per_gt)
+            self._capture_radio_sample(self.dt_sched, history)
+
+        # sched and PF diagnostics describe the last actual RB decision.
+        # Observations and reward instead use time-average service of this
+        # UAV period, including per-UAV averages for the idle-UAV reward mask.
+        self.instant_rate_per_gt = self.rate_per_gt.copy()
+        self.instant_rate_per_ubs = self.rate_per_ubs.copy()
+        self.rate_per_gt = period_mbit_gt / self.dt_uav
+        self.rate_per_ubs = period_mbit_ubs / self.dt_uav
+        self.fair_idx = compute_jain_fairness_index(self.avg_rate_per_gt)
+        self.global_util = self.fair_idx * self.rate_per_gt.mean()
+        self.avg_global_util = (
+            self.avg_global_util * (self.t - 1) + self.global_util
+        ) / self.t
+
+    def _capture_radio_sample(self, duration_s, history_before):
+        """Optional last-period trace; never grows with episode length."""
+        if not self.record_substeps:
+            return
+        sample = dict(duration_s=float(duration_s), service_time_s=self.service_time_s,
+                      uav_step=self.t, rate_per_gt=self.rate_per_gt.copy(),
+                      rate_per_ubs=self.rate_per_ubs.copy(), sched=self.sched.copy(),
+                      history_before=history_before.copy(),
+                      history_after=self.avg_rate_per_gt.copy(),
+                      priority=self.last_prior_gts.copy(),
+                      coverage=(self.d_u2g <= self.r_cov),
+                      pos_ubs=self.pos_ubs.copy(),
+                      compute_s=self.scheduling_durations_s[-1])
+        if self.edgeric_scheduler is not None:
+            sample["weights"] = self.edgeric_scheduler.weights.copy()
+        self.last_radio_trace.append(sample)
+
+    def get_scheduling_stats(self):
+        """Measured compute latency, not a claim of a hard real-time deadline."""
+        durations = np.asarray(self.scheduling_durations_s, dtype=np.float64)
+        period = self.dt_sched if self.fast_scheduling else float(self.dt)
+        return dict(dt_uav_s=float(self.dt), dt_sched_s=period,
+                    scheduling_count=self.scheduling_count,
+                    initialization_scheduling_count=self.initialization_scheduling_count,
+                    service_time_s=self.service_time_s,
+                    mean_compute_s=float(durations.mean()) if durations.size else 0.0,
+                    p95_compute_s=float(np.percentile(durations, 95)) if durations.size else 0.0,
+                    p99_compute_s=float(np.percentile(durations, 99)) if durations.size else 0.0,
+                    max_compute_s=float(durations.max()) if durations.size else 0.0,
+                    over_period_count=int((durations > period).sum()))
 
     def get_obs(self) -> list:
         return [self.get_obs_agent(agent_id) for agent_id in range(self.n_agents)]

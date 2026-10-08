@@ -71,8 +71,9 @@ def cuda_primitives():
                 mpi_version=MPI.Get_library_version().splitlines()[0])
 
 
-def covered_env(mode):
-    env = MultiUbsCoverageEnv("4ubs", scheduler_mode=mode, record=False)
+def covered_env(mode, fast_scheduling=False, dt_sched=1.0):
+    env = MultiUbsCoverageEnv("4ubs", scheduler_mode=mode, record=False,
+                              fast_scheduling=fast_scheduling, dt_sched=dt_sched)
     env.map = copy.copy(env.map)
     uavs = np.array([[1000., 1000.], [1120., 1000.],
                      [2000., 2000.], [2120., 2000.]], dtype=np.float32)
@@ -83,7 +84,7 @@ def covered_env(mode):
     return env
 
 
-def train_case(mode, protocol, output):
+def train_case(mode, protocol, output, fast_scheduling=False, dt_sched=1.0):
     started = time.monotonic()
     random.seed(10)
     np.random.seed(10)
@@ -97,7 +98,7 @@ def train_case(mode, protocol, output):
                   batch_size=2, replay_size=8, max_seq_len=None)
     args = check_args_sanity(SimpleNamespace(**config))
     assert args.device == "cuda:0"
-    env = make_env(lambda: covered_env(mode), args)
+    env = make_env(lambda: covered_env(mode, fast_scheduling, dt_sched), args)
     with contextlib.redirect_stdout(io.StringIO()):
         learner = MultiAgentQLearner(env.get_env_info(), args)
     device = torch.device("cuda:0")
@@ -140,6 +141,7 @@ def train_case(mode, protocol, output):
     torch.cuda.reset_peak_memory_stats(device)
     interactions = 0
     initial_seen_edges = []
+    episode_radio_stats = []
     for episode in range(2):
         (obs, state), hidden = env.reset(), learner.init_hidden()
         initial_seen_edges.append(obs.num_edges("seen"))
@@ -153,6 +155,13 @@ def train_case(mode, protocol, output):
             obs, state, hidden = next_obs, next_state, next_hidden
             interactions += 1
         assert done
+        stats = env.get_scheduling_stats()
+        if fast_scheduling:
+            assert stats["scheduling_count"] == 50 * env.n_substeps
+            assert stats["service_time_s"] == 2000
+        else:
+            assert stats["scheduling_count"] == 51
+        episode_radio_stats.append(stats)
     assert len(learner.buffer) == 2
 
     updates = []
@@ -185,6 +194,8 @@ def train_case(mode, protocol, output):
     assert observed["grad_enabled_forward_calls"] > 0
     assert len(observed["cuda_losses"]) == 2
     result = dict(status="PASS", mode=mode, protocol=protocol, map_id="4ubs",
+                  fast_scheduling=fast_scheduling, dt_sched_s=dt_sched if fast_scheduling else env.dt,
+                  episode_radio_stats=episode_radio_stats,
                   layout="synthetic covered positions; original map/radio/actions/dt",
                   config=vars(args), interactions=interactions, episodes=2,
                   replay_sequences=len(learner.buffer), initial_seen_edges=initial_seen_edges,
@@ -207,6 +218,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("../results/gpu_validation"))
     parser.add_argument("--primitives-only", action="store_true")
+    parser.add_argument("--fast-scheduling", action="store_true")
+    parser.add_argument("--dt-sched", type=float, default=1.0)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
@@ -216,7 +229,8 @@ def main():
     if not args.primitives_only:
         for mode in ("original", "edgeric_pf"):
             for protocol in (None, "tarmac", "disc"):
-                result["marl"].append(train_case(mode, protocol, args.output))
+                result["marl"].append(train_case(mode, protocol, args.output,
+                                                args.fast_scheduling, args.dt_sched))
                 gc.collect()
                 torch.cuda.empty_cache()
         (args.output / "gpu_validation.json").write_text(json.dumps(result, indent=2) + "\n")
