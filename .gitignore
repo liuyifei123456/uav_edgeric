@@ -1,0 +1,59 @@
+# Python 缓存与构建
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Conda/虚拟环境
+.venv/
+venv/
+env/
+conda-meta/
+
+# 编辑器和系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# 凭据与敏感文件
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.netrc
+
+# 模型、数组和训练缓存
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.npy
+*.npz
+wandb/
+tensorboard/
+events.out.tfevents.*
+
+# 日志和可再生发布产物
+*.log
+*.tar.gz
+results/gpu_validation/wheels/
+
+# 参考仓库中的可再生构建/抓包产物
+EdgeRIC-on-5G/**/build/
+EdgeRIC-on-5G/**/pcaps/
+EdgeRIC-on-5G/**/logfile.log
+EdgeRIC-on-5G/**/dump.rdb

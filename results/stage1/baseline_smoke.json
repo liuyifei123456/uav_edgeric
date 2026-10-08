@@ -1,0 +1,20 @@
+{
+  "status": "BASELINE_RESET_STEP_OK",
+  "dt": 40,
+  "n_actions": 9,
+  "state_shape": [
+    208
+  ],
+  "reward_shape": [
+    4
+  ],
+  "info": {
+    "EpRet": 0.0,
+    "EpLen": 5.0,
+    "AvgGlobalUtility": 0.0,
+    "FairIdx": 0.9999999611421919,
+    "TotalThroughput": 0.0,
+    "ProbCollision": 0.0,
+    "BadMask": 0.0
+  }
+}

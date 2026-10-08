@@ -1,0 +1,10 @@
+scenario,seed,frames_including_reset,different_priority_frames,different_rb_frames,different_served_set_frames,max_weight,max_gt_weight_span
+native_random,0,51,51,0,0,0.0,0.0
+native_random,10,51,51,0,0,0.0,0.0
+native_random,20,51,51,0,0,0.0,0.0
+contention_hover,0,51,51,51,51,19.989944759809323,19.037586624835846
+contention_hover,10,51,51,51,51,19.98974078428826,19.03738312164406
+contention_hover,20,51,51,51,51,19.993107734249286,19.04074231533332
+contention_motion,0,51,51,50,46,19.989944759809323,19.979246367869994
+contention_motion,10,51,51,47,46,19.98974078428826,19.952826455112486
+contention_motion,20,51,51,51,46,19.993107734249286,19.993107734249286

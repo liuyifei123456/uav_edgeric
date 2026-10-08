@@ -1,0 +1,43 @@
+certifi==2026.7.22
+charset-normalizer==3.5.2
+cloudpickle==2.1.0
+cycler==0.12.1
+dgl @ file:///workspace/uav_edgeric_stage1/results/gpu_validation/wheels/dgl-1.1.3%2Bcu121-cp39-cp39-manylinux1_x86_64.whl
+exceptiongroup==1.3.1
+filelock @ file:///home/conda/feedstock_root/build_artifacts/filelock_1755216263872/work
+fonttools==4.60.2
+fsspec==2023.12.2
+gmpy2 @ file:///home/conda/feedstock_root/build_artifacts/gmpy2_1745509363867/work
+gym==0.21.0
+idna==3.20
+iniconfig==2.1.0
+Jinja2 @ file:///home/conda/feedstock_root/build_artifacts/jinja2_1741263328855/work
+joblib==1.1.0
+kiwisolver==1.4.7
+MarkupSafe @ file:///home/conda/feedstock_root/build_artifacts/markupsafe_1733219680183/work
+matplotlib==3.5.3
+mpi4py @ file:///home/conda/feedstock_root/build_artifacts/mpi4py_1666811243705/work
+mpmath @ file:///home/conda/feedstock_root/build_artifacts/mpmath_1733302684489/work
+networkx==2.8.5
+numpy @ file:///home/conda/feedstock_root/build_artifacts/numpy_1668919081525/work
+packaging==26.3
+pandas==1.4.3
+pillow==11.3.0
+pluggy==1.6.0
+psutil==5.9.1
+pyparsing==3.3.3
+pytest==7.4.4
+python-dateutil==2.9.0.post0
+pytz==2026.5
+PyYAML @ file:///home/conda/feedstock_root/build_artifacts/pyyaml_1737454647378/work
+requests==2.32.5
+scipy==1.9.0
+seaborn==0.11.2
+six==1.17.0
+sympy @ file:///home/conda/feedstock_root/build_artifacts/sympy_1745946051654/work
+tomli==2.5.0
+torch==2.1.2
+tqdm==4.64.0
+triton==2.1.0
+typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_typing_extensions_1751643513/work
+urllib3==2.6.3

@@ -1,0 +1,13 @@
+{
+  "files_sha256": {
+    "environment-gpu.yml": "003d4ba4fad126a09283ae305a015adc19a1f859dde20fb67a4e449d08e3b6d1",
+    "README_GPU.md": "22d3c71b9f07663ddff81e1030ddfb41b7cce36d67ff18f46d24b005e19054e2",
+    "uav_bs_ctrl/scripts/verify_gpu.py": "182c4b3c0d86e10622ae13ed61767a45269a624d17c1cb75ff54c7cb09bc6685"
+  },
+  "main_branch": "feat/edgeric-pf-stage1",
+  "main_head": "5ef26f2c0c324a5888eca999beff3d42b6137ace",
+  "reference_clean": true,
+  "cuda_cases": 6,
+  "optimizer_updates": 12,
+  "environment_interactions": 600
+}

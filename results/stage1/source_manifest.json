@@ -1,0 +1,19 @@
+{
+  "main_sha": "5ef26f2c0c324a5888eca999beff3d42b6137ace",
+  "reference_sha": "40a643ba16df0e2dda86f3e584438b3d6bd8152c",
+  "branch": "feat/edgeric-pf-stage1",
+  "reference_clean": true,
+  "source_sha256": {
+    "uav_bs_ctrl/.gitignore": "599e8d09a18b6bac6f70ed12bf96f67e49c4d992ee2601bc173d92fbcb64b11d",
+    "uav_bs_ctrl/edgeric/__init__.py": "ca5c162a5fdac0066c7a18a3b23af6e5439d7e52eddefa7b72c0110e1ee5371d",
+    "uav_bs_ctrl/edgeric/scheduler.py": "bf02d72cae8942992185d83929224cebbe1f9576a181c39f8e2717432b1258c1",
+    "uav_bs_ctrl/envs/mubs_cov/mubs_cov.py": "b1179efc05b527b2cf851e43be94b4b2f00cf8eb5cd6b3fca1e7af98e5867457",
+    "uav_bs_ctrl/tests/test_edgeric_scheduler.py": "f6f1230a7e7080835a59eada175eb0bee558481344d4caed32f0b197467c55a3",
+    "uav_bs_ctrl/tests/test_edgeric_integration.py": "0bf3a779c5c9019a67da1015b790d8ef395df2310eb67b93ebd70c51eb895083",
+    "uav_bs_ctrl/scripts/verify_environment.py": "62fcb5548ce57f86181287458e687ca9e779707fc457b698a5294c0f6918c103",
+    "uav_bs_ctrl/scripts/compare_stage1.py": "c9c5fc8196183d2ee1365b09e2a5817ddd10ba903542e039dbd6ca6ab1645513",
+    "environment.yml": "cbd6b7d56596fbc95cb2f553bc6d81668ad68a7c8423cf1aa9a908941d6c8939",
+    "README_STAGE1.md": "d8c18880beb3ee537bdcee72a6db9d1152cc44b432de0f6e745098c50e0365fa"
+  },
+  "artifact_checks": "18 NPZ/episodes, all values finite, 3 PNG images and 3 PDF figures: PASS"
+}

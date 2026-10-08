@@ -1,0 +1,13 @@
+scenario,seed,pair,service_decisions,different_rb_decisions,different_served_sets,throughput_delta_Gb
+contention_hover,0,A-B,20,20,20,0.22514067113399516
+contention_hover,0,C-D,800,800,800,0.04858677007257928
+contention_hover,10,A-B,20,20,20,-0.07501204431056951
+contention_hover,10,C-D,800,800,800,0.02326500599086323
+contention_hover,20,A-B,20,20,20,-0.21907242387533188
+contention_hover,20,C-D,800,800,800,0.06516925836354481
+contention_motion,0,A-B,20,19,18,0.2151328164339068
+contention_motion,0,C-D,800,800,720,0.023125458382069475
+contention_motion,10,A-B,20,19,18,0.0003674659132961722
+contention_motion,10,C-D,800,800,720,0.019765761718153918
+contention_motion,20,A-B,20,20,18,-0.00782195329666191
+contention_motion,20,C-D,800,800,720,0.05877349154651146

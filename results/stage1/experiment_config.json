@@ -1,0 +1,26 @@
+{
+  "map_id": "4ubs",
+  "seeds": [
+    0,
+    10,
+    20
+  ],
+  "steps": 50,
+  "config": {
+    "dt": 40,
+    "n_rbs": 5,
+    "bw": 180000.0,
+    "p_tx": 0.01,
+    "n0": 1.0000000000000001e-20,
+    "r_cov": 100.0,
+    "max_rate": 2.1528756125535997,
+    "epsilon_mbps": 0.10764378062767999
+  },
+  "main_base_sha": "5ef26f2c0c324a5888eca999beff3d42b6137ace",
+  "comparison": "paired initial positions and open-loop actions; no trained policy",
+  "native": "Unmodified map distribution; independent pre-generated random actions.",
+  "contention": "Synthetic two overlapping UAV pairs, 49 nearby GTs, one uncovered GT.",
+  "reset_accounting": "Upstream counts reset transmission too: 51 samples at 40s = 2040s of service; trajectory clock ends at 2000s.",
+  "fairness_caveat": "Upstream clips all GT rates to >=1e-6 for Jain index; all-zero service returns approximately 1.",
+  "throughput_unit": "Gb, per upstream rate_Mbps * dt_s / 1000, despite outdated Mb comment."
+}

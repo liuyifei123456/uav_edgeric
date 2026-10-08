@@ -1,0 +1,34 @@
+{
+  "configs": {
+    "A": [
+      "original",
+      false
+    ],
+    "B": [
+      "edgeric_pf",
+      false
+    ],
+    "C": [
+      "original",
+      true
+    ],
+    "D": [
+      "edgeric_pf",
+      true
+    ]
+  },
+  "seeds": [
+    0,
+    10,
+    20
+  ],
+  "steps": 20,
+  "dt_uav": 40,
+  "dt_sched": 1.0,
+  "motion": "Version A: original action applied once, fixed UAV/GT positions within each period",
+  "traffic": "Original saturated traffic/channel model; no new time-varying demand",
+  "reset": "A/B keep stage1 reset service; C/D have no reset service",
+  "metrics": "TotalThroughput/FairIdx/AvgGlobalUtility are native env metrics. ServiceThroughput excludes legacy reset. WindowFairIdx/WindowAvgUtility are evaluator-only aligned post-reset metrics; they do not modify rewards.",
+  "timing_scope": "perf_counter CPU geometry + channel + weights + allocation + SINR/rates; excludes accumulation, trace copying, Python orchestration, and MARL GPU work. No hard-real-time claim.",
+  "base_sha": "4eff8b9ad05873c873cd245b4058da9fc5d86b28"
+}

@@ -1,0 +1,29 @@
+{
+  "stage1_commit": "4eff8b9ad05873c873cd245b4058da9fc5d86b28",
+  "stage2_commit": "87b3ceabd4200bbc85c7f5cf68f62607925fe668",
+  "branch": "feat/edgeric-dual-timescale",
+  "main_worktree_clean": true,
+  "reference_clean": true,
+  "protected_files_unchanged": 102,
+  "test_counts": {
+    "cpu": {
+      "tests": 75,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "gpu": {
+      "tests": 75,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "file_sha256": {
+    "uav_bs_ctrl/envs/mubs_cov/mubs_cov.py": "1bd93571c8d44658b757b048ea7ea2a776c8b33805e65ff86bc07fa5381a9ac0",
+    "uav_bs_ctrl/scripts/verify_gpu.py": "fa44fc74c1da23c630d934b0e0a1101f92a9c814284e12688ed491533b116495",
+    "uav_bs_ctrl/scripts/compare_stage2.py": "c28686e4d28caa543d2d246bebbf0a91fbf3ac78a5ad056ea711e8399fafcc01",
+    "uav_bs_ctrl/tests/test_dual_timescale.py": "296c938f1277267287255af7cf4ce8d74b577af9a296d40a0e7d7de06a6ebff9",
+    "README_STAGE2.md": "736becf2dadf38f3a79b51cfda5b98ecc5ab59bab01df6bd485df1da95073575"
+  }
+}

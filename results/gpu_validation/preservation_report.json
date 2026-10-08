@@ -1,0 +1,27 @@
+{
+  "cpu_environment": {
+    "before_files": 33218,
+    "after_files": 33218,
+    "changed": [],
+    "removed": [],
+    "added": []
+  },
+  "project": {
+    "before_files": 54,
+    "after_files": 55,
+    "changed": [],
+    "removed": [],
+    "added": [
+      "scripts/verify_gpu.py"
+    ]
+  },
+  "stage1_results": {
+    "before_files": 60,
+    "after_files": 60,
+    "changed": [],
+    "removed": [],
+    "added": []
+  },
+  "cpu_config_unchanged": true,
+  "cpu_packages_unchanged": true
+}
