@@ -1,0 +1,4 @@
+[submodule "EdgeRIC-on-5G"]
+	path = EdgeRIC-on-5G
+	url = https://github.com/ucsdwcsng/EdgeRIC-on-5G.git
+	branch = srsran
